@@ -60,45 +60,4 @@ jobs:
           name: vpyr-llvm-linux-x64
           path: vpyr-llvm-linux-x64.tar.gz
 
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          
-      - name: Setup MSVC
-        uses: ilammy/msvc-dev-cmd@v1
-        
-      - name: Setup Ninja
-        uses: seanmiddleditch/gha-setup-ninja@master
-          
-      - name: Configure LLVM (Windows LTO Stage 2)
-        run: |
-          cmake -G Ninja -S llvm-project/llvm -B build `
-            -DCLANG_VENDOR="vpyr.sh " `
-            -DLLVM_ENABLE_PROJECTS="clang;lld" `
-            -DLLVM_ENABLE_RUNTIMES="compiler-rt;libcxx;libcxxabi;libunwind" `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DLLVM_ENABLE_LTO=Thin `
-            -DCMAKE_C_COMPILER=cl `
-            -DCMAKE_CXX_COMPILER=cl `
-            -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}\vpyr-llvm-windows-x64"
-            
-      - name: Build LLVM
-        run: ninja -C build
-        
-      - name: Install Toolchain
-        run: ninja -C build install
-        
-      - name: Package Toolchain
-        run: |
-          Copy-Item -Path "vpyr-toolchain.cmake" -Destination "vpyr-llvm-windows-x64\vpyr-toolchain.cmake"
-          Compress-Archive -Path vpyr-llvm-windows-x64 -DestinationPath vpyr-llvm-windows-x64.zip
-        
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: vpyr-llvm-windows-x64
-          path: vpyr-llvm-windows-x64.zip
+
