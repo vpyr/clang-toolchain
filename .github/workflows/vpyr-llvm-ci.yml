@@ -68,6 +68,12 @@ jobs:
         with:
           submodules: recursive
           
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@master
+          
       - name: Configure LLVM (Windows LTO Stage 2)
         run: |
           cmake -G Ninja -S llvm-project/llvm -B build `
