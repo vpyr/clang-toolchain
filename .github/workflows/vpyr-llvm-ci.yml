@@ -1,0 +1,98 @@
+name: Build vpyr.sh LLVM Distribution
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build build-essential python3 libz-dev libzstd-dev mingw-w64
+          
+      - name: Configure LLVM (Linux BOLT-PGO + LTO Stage 3 with Cross Runtimes)
+        run: |
+          # Use BOLT-PGO cache and configure runtimes for both native Linux and Windows cross-compilation
+          cmake -G Ninja -S llvm-project/llvm -B build \
+            -C llvm-project/clang/cmake/caches/BOLT-PGO.cmake \
+            -DBOOTSTRAP_LLVM_ENABLE_LLD=ON \
+            -DBOOTSTRAP_BOOTSTRAP_LLVM_ENABLE_LLD=ON \
+            -DPGO_INSTRUMENT_LTO=Thin \
+            -DCLANG_VENDOR="vpyr.sh " \
+            -DLLVM_ENABLE_PROJECTS="clang;lld;bolt" \
+            -DLLVM_ENABLE_RUNTIMES="compiler-rt;libcxx;libcxxabi;libunwind" \
+            -DBOOTSTRAP_LLVM_ENABLE_RUNTIMES="compiler-rt;libcxx;libcxxabi;libunwind" \
+            -DLLVM_RUNTIME_TARGETS="default;x86_64-w64-mingw32" \
+            -DBOOTSTRAP_LLVM_RUNTIME_TARGETS="default;x86_64-w64-mingw32" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=$(pwd)/vpyr-llvm-linux-x64
+            
+      - name: Build LLVM (stage2-clang-bolt)
+        run: |
+          # The BOLT-PGO cache creates a stage2-clang-bolt target
+          ninja -C build stage2-clang-bolt
+          
+      - name: Install and Package Toolchain
+        run: |
+          mkdir -p vpyr-llvm-linux-x64/bin vpyr-llvm-linux-x64/lib vpyr-llvm-linux-x64/include
+          # Usually they end up in build/tools/clang/stage2-bins/
+          cp -a build/tools/clang/stage2-bins/bin/* vpyr-llvm-linux-x64/bin/ || cp -a build/bin/* vpyr-llvm-linux-x64/bin/
+          cp -a build/tools/clang/stage2-bins/lib/* vpyr-llvm-linux-x64/lib/ || cp -a build/lib/* vpyr-llvm-linux-x64/lib/
+          cp -a build/tools/clang/stage2-bins/include/* vpyr-llvm-linux-x64/include/ || cp -a build/include/* vpyr-llvm-linux-x64/include/
+          
+          # Add the toolchain file
+          cp vpyr-toolchain.cmake vpyr-llvm-linux-x64/
+          
+          tar -czvf vpyr-llvm-linux-x64.tar.gz vpyr-llvm-linux-x64/
+          
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vpyr-llvm-linux-x64
+          path: vpyr-llvm-linux-x64.tar.gz
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          
+      - name: Configure LLVM (Windows LTO Stage 2)
+        run: |
+          cmake -G Ninja -S llvm-project/llvm -B build `
+            -DCLANG_VENDOR="vpyr.sh " `
+            -DLLVM_ENABLE_PROJECTS="clang;lld" `
+            -DLLVM_ENABLE_RUNTIMES="compiler-rt;libcxx;libcxxabi;libunwind" `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DLLVM_ENABLE_LTO=Thin `
+            -DCMAKE_C_COMPILER=cl `
+            -DCMAKE_CXX_COMPILER=cl `
+            -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}\vpyr-llvm-windows-x64"
+            
+      - name: Build LLVM
+        run: ninja -C build
+        
+      - name: Install Toolchain
+        run: ninja -C build install
+        
+      - name: Package Toolchain
+        run: |
+          Copy-Item -Path "vpyr-toolchain.cmake" -Destination "vpyr-llvm-windows-x64\vpyr-toolchain.cmake"
+          Compress-Archive -Path vpyr-llvm-windows-x64 -DestinationPath vpyr-llvm-windows-x64.zip
+        
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vpyr-llvm-windows-x64
+          path: vpyr-llvm-windows-x64.zip
